@@ -165,6 +165,9 @@ class Crawler:
                 continue
             finally:
                 self.visited_urls.append(url)
+        self.running=False
+        time.sleep(0.1)
+        print("here!!!!!")
         self.record.join()
         self.write_kwd_and_stats()
         print("finished running crawler run ")
@@ -182,7 +185,11 @@ class CrawlerGUI:
         self.crawler=None
         self.crawl_thread=None
         self.master = master
-
+        self.master.protocol("WM_DELETE_WINDOW",self.on_close)
+        self.window_open=True
+        self.monitor=threading.Thread(target=self.monitor_crawler)
+        self.monitor.start()
+        self.stop_crawling_called=False
         master.title("Web Crawler")
 
         # URL Input
@@ -213,11 +220,38 @@ class CrawlerGUI:
         # Stop Button (if applicable)
         self.stop_button = tk.Button(master, text="Stop Crawling", command=self.stop_crawling)
         self.stop_button.pack()
+    def monitor_crawler(self):
+        crawler_last_status=False
+        while self.window_open:
+            # print('monitoring...')
+            time.sleep(1)
+            if self.crawler is not None:
+                print("crawler exist and monitored")
+                if self.crawler.running:
+                    print("Crawle still running")
+                    crawler_last_status = True
+                elif (self.crawler.running is False) and crawler_last_status and (self.stop_crawling_called is False):
+                    print("here")
+                    crawler_last_status=False
+                    self.stop_crawling()
+                else:
+                    print(self.crawler.running,crawler_last_status,self.stop_crawling_called)
+            else:
+                
+                crawler_last_status = False
+    def on_close(self):
+        self.window_close=True
+        time.sleep(1)
+        self.monitor.join()
+        self.master.destroy()
+        sys.exit()
         
+                
     def start_crawling(self):
 
         url = self.entry_url.get()
         max_pages = self.entry_max_pages.get()
+        max_pages=int(max_pages)-1
         domain = self.entry_domain.get()
         if url:
             if domain:
@@ -229,12 +263,12 @@ class CrawlerGUI:
             if max_pages:
                 print("max pages",max_pages)
                 self.crawl_thread = threading.Thread(target=self.crawler.run, args=[int(max_pages)])
-                self.status_area.insert(tk.END, f"Starting crawl at {url} with max pages {max_pages}\n")
+                self.status_area.insert(tk.END, f"Starting crawl at {url} with max pages {max_pages+1}\n")
             else:
                 self.crawl_thread = threading.Thread(target=self.crawler.run)
                 self.status_area.insert(tk.END, f"Starting crawl at {url} with no max pages")
                 
-            self.update_status=threading.Thread(target=self.update_text_area, args=[max_pages])
+            self.update_status=threading.Thread(target=self.update_text_area, args=[max_pages+1])
             
             self.crawl_thread.start() 
             self.update_status.start()  
@@ -246,13 +280,14 @@ class CrawlerGUI:
         while self.crawler.running:
             time.sleep(3)
             if self.crawler.running:
-                print("SHOUDL BE PRINTING NOW")
+                print("printing crawling status")
                 self.status_area.insert(tk.END, f"Crawled {self.crawler.doc_counter} pages; ")
                 self.status_area.insert(tk.END, f"found {self.crawler.kwd_counter} keywords.\n")
                 if max_pages:
                     self.status_area.insert(tk.END, f"progress: {self.crawler.doc_counter/int(max_pages)}%\n")
         
     def stop_crawling(self):
+        self.stop_crawling_called=True
         print("SHOULD BE STOPPing")
         # if self.crawler:
         self.status_area.insert(tk.END, f"---------Summary----------\n")
@@ -278,7 +313,7 @@ class CrawlerGUI:
         self.crawl_thread = None
 
 if __name__ == '__main__':
-    Crawler(urls=['https://cc.gatech.edu'],domain='cc.gatech.edu').run(max_pages=3000)
-    # root = tk.Tk()
-    # gui =CrawlerGUI(root)
-    # root.mainloop()
+    # Crawler(urls=['https://cc.gatech.edu'],domain='cc.gatech.edu').run(max_pages=3000)
+    root = tk.Tk()
+    gui =CrawlerGUI(root)
+    root.mainloop()
