@@ -33,9 +33,16 @@ class Crawler:
         self.domain=domain
 
     def record_data(self):
+        print("start recording data")
         tm = 0
         while self.running:
-            time.sleep(60)
+            # time.sleep(60)
+            
+            for i in range(30):
+                time.sleep(2)
+                if self.running is False:
+                    break
+                    
             tm+=1
             print(self.kwd_counter)
             print(self.doc_counter)
@@ -43,6 +50,7 @@ class Crawler:
             self.kwd_stat.loc[len(self.kwd_stat)] = [tm, self.kwd_counter]
             self.doc_stat.loc[len(self.doc_stat)] = [tm, self.doc_counter]
             self.ratio_stat.loc[len(self.ratio_stat)] = [tm, self.doc_counter/len(self.urls_to_visit)]
+        print("stop recording data")
 
     def download_url(self, url):
         response = requests.get(url)
@@ -89,6 +97,7 @@ class Crawler:
             self.add_url_to_visit(url)
 
     def write_kwd_and_stats(self):
+        print("writing data to file")
         pattern = re.compile(r'^stats-(\d+)$')
 
         max_number = -1
@@ -137,6 +146,7 @@ class Crawler:
         plt.ylabel('Crawled/To Be Crawled Ratio')
         plt.title('Crawled/To Be Crawled Ratio Over Time')
         plt.savefig(new_folder+'/ratio_stat_plot.png')
+        print("finished writing data to file")
 
     def run(self,max_pages=10000000):
         self.record=threading.Thread(target=self.record_data)
@@ -155,12 +165,13 @@ class Crawler:
                 continue
             finally:
                 self.visited_urls.append(url)
-        self.stop()
-
-    def stop(self):
-        self.running=False
         self.record.join()
         self.write_kwd_and_stats()
+        print("finished running crawler run ")
+    def stop(self):
+        print("crawler's internal stop called")
+        self.running=False
+
         
 import tkinter as tk
 from tkinter import scrolledtext
@@ -171,9 +182,7 @@ class CrawlerGUI:
         self.crawler=None
         self.crawl_thread=None
         self.master = master
-        status=threading.Thread(target=self.check_crawler_ending)
-        status.daemon=True
-        status.start()
+
         master.title("Web Crawler")
 
         # URL Input
@@ -204,14 +213,7 @@ class CrawlerGUI:
         # Stop Button (if applicable)
         self.stop_button = tk.Button(master, text="Stop Crawling", command=self.stop_crawling)
         self.stop_button.pack()
-
-        master.protocol("WM_DELETE_WINDOW", self.stop_crawling)
-    def check_crawler_ending(self):
-        while self.crawler is None:
-            time.sleep(2)
-        while self.crawler.running:
-            time.sleep(2)
-        self.stop_crawling()
+        
     def start_crawling(self):
 
         url = self.entry_url.get()
@@ -222,32 +224,61 @@ class CrawlerGUI:
                 self.crawler=Crawler(urls=[url],domain=domain)
                 print("DOMAIN ",domain)
             else:
-                self.crawler=Crawler(urls=[url])
+                self.crawler=Crawler(urls=[url])  
+            
             if max_pages:
                 print("max pages",max_pages)
                 self.crawl_thread = threading.Thread(target=self.crawler.run, args=[int(max_pages)])
+                self.status_area.insert(tk.END, f"Starting crawl at {url} with max pages {max_pages}\n")
             else:
                 self.crawl_thread = threading.Thread(target=self.crawler.run)
-            self.crawl_thread.start()
+                self.status_area.insert(tk.END, f"Starting crawl at {url} with no max pages")
+                
+            self.update_status=threading.Thread(target=self.update_text_area, args=[max_pages])
             
-            self.status_area.insert(tk.END, f"Starting crawl at {url} with max pages {max_pages}\n")
-            # self.update_text_area()
+            self.crawl_thread.start() 
+            self.update_status.start()  
+            
             # self.update_text_area()
 
-
-    def stop_crawling(self):
-        if self.crawler:
+    def update_text_area(self,max_pages):
+        self.seconds = time.time()
+        while self.crawler.running:
+            time.sleep(3)
             if self.crawler.running:
-                self.crawler.stop()
-            if self.crawl_thread.is_alive() is False:
-                self.crawl_thread.join()
-            self.status_area.insert(tk.END, "Crawl stopped\n")
-            self.crawler = None
-            self.crawl_thread = None
-        self.master.destroy()  # Destroy the Tkinter window
+                print("SHOUDL BE PRINTING NOW")
+                self.status_area.insert(tk.END, f"Crawled {self.crawler.doc_counter} pages; ")
+                self.status_area.insert(tk.END, f"found {self.crawler.kwd_counter} keywords.\n")
+                if max_pages:
+                    self.status_area.insert(tk.END, f"progress: {self.crawler.doc_counter/int(max_pages)}%\n")
+        
+    def stop_crawling(self):
+        print("SHOULD BE STOPPing")
+        # if self.crawler:
+        self.status_area.insert(tk.END, f"---------Summary----------\n")
+        self.status_area.insert(tk.END, f"Timer for this crawling: {time.time()-self.seconds}\n")
+        self.status_area.insert(tk.END, f"Crawled {self.crawler.doc_counter} pages\n")
+        self.status_area.insert(tk.END, f"found {self.crawler.kwd_counter} keywords.\n")   
+        if self.crawler.running:
+            print("crawler stopped")
+            self.crawler.stop()
+            print(self.crawler.running)
+        if self.crawl_thread.is_alive():
+            print('crawler thread joined')
+            self.crawl_thread.join()
+            print('joined?')
+        if self.update_status.is_alive():
+            print('update status thread joined')
+            self.update_status.join()
+        else:
+            print('update status not alivve?')
+        print('crawl stopped')
+        self.status_area.insert(tk.END, "Crawl stopped\n")
+        self.crawler = None
+        self.crawl_thread = None
 
 if __name__ == '__main__':
-    # Crawler(urls=['https://cc.gatech.edu'],domain='cc.gatech.edu').run(max_pages=2000)
-    root = tk.Tk()
-    gui =CrawlerGUI(root)
-    root.mainloop()
+    Crawler(urls=['https://cc.gatech.edu'],domain='cc.gatech.edu').run(max_pages=3000)
+    # root = tk.Tk()
+    # gui =CrawlerGUI(root)
+    # root.mainloop()
