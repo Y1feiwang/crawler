@@ -7,7 +7,9 @@ import threading
 import time
 import json
 import pandas as pd
+import matplotlib
 import matplotlib.pyplot as plt
+matplotlib.use('Agg') 
 from tkinter import scrolledtext  # Import scrolledtext for a scrollable text area
 import re
 import sys
@@ -33,7 +35,6 @@ class Crawler:
         self.domain=domain
 
     def record_data(self):
-        print("start recording data")
         tm = 0
         while self.running:
             # time.sleep(60)
@@ -44,13 +45,12 @@ class Crawler:
                     break
                     
             tm+=1
-            print(self.kwd_counter)
-            print(self.doc_counter)
-            print(self.doc_counter/len(self.urls_to_visit))
             self.kwd_stat.loc[len(self.kwd_stat)] = [tm, self.kwd_counter]
             self.doc_stat.loc[len(self.doc_stat)] = [tm, self.doc_counter]
-            self.ratio_stat.loc[len(self.ratio_stat)] = [tm, self.doc_counter/len(self.urls_to_visit)]
-        print("stop recording data")
+            if self.urls_to_visit != 0:
+                self.ratio_stat.loc[len(self.ratio_stat)] = [tm, self.doc_counter/len(self.urls_to_visit)]
+            else:
+                self.ratio_stat = -1
 
     def download_url(self, url):
         response = requests.get(url)
@@ -97,7 +97,6 @@ class Crawler:
             self.add_url_to_visit(url)
 
     def write_kwd_and_stats(self):
-        print("writing data to file")
         pattern = re.compile(r'^stats-(\d+)$')
 
         max_number = -1
@@ -146,7 +145,6 @@ class Crawler:
         plt.ylabel('Crawled/To Be Crawled Ratio')
         plt.title('Crawled/To Be Crawled Ratio Over Time')
         plt.savefig(new_folder+'/ratio_stat_plot.png')
-        print("finished writing data to file")
 
     def run(self,max_pages=10000000):
         self.record=threading.Thread(target=self.record_data)
@@ -167,12 +165,9 @@ class Crawler:
                 self.visited_urls.append(url)
         self.running=False
         time.sleep(0.1)
-        print("here!!!!!")
         self.record.join()
         self.write_kwd_and_stats()
-        print("finished running crawler run ")
     def stop(self):
-        print("crawler's internal stop called")
         self.running=False
 
         
@@ -223,32 +218,26 @@ class CrawlerGUI:
     def monitor_crawler(self):
         crawler_last_status=False
         while self.window_open:
-            # print('monitoring...')
             time.sleep(1)
             if self.crawler is not None:
-                print("crawler exist and monitored")
                 if self.crawler.running:
-                    print("Crawle still running")
                     crawler_last_status = True
                 elif (self.crawler.running is False) and crawler_last_status and (self.stop_crawling_called is False):
-                    print("here")
                     crawler_last_status=False
                     self.stop_crawling()
-                else:
-                    print(self.crawler.running,crawler_last_status,self.stop_crawling_called)
             else:
                 
                 crawler_last_status = False
     def on_close(self):
-        self.window_close=True
-        time.sleep(1)
+        self.window_open=False
+        time.sleep(0.5)
         self.monitor.join()
         self.master.destroy()
         sys.exit()
         
                 
     def start_crawling(self):
-
+        
         url = self.entry_url.get()
         max_pages = self.entry_max_pages.get()
         max_pages=int(max_pages)-1
@@ -256,31 +245,32 @@ class CrawlerGUI:
         if url:
             if domain:
                 self.crawler=Crawler(urls=[url],domain=domain)
-                print("DOMAIN ",domain)
             else:
                 self.crawler=Crawler(urls=[url])  
-            
+            self.status_area.insert(tk.END, f"Starting crawl at {url}\n")
             if max_pages:
-                print("max pages",max_pages)
                 self.crawl_thread = threading.Thread(target=self.crawler.run, args=[int(max_pages)])
-                self.status_area.insert(tk.END, f"Starting crawl at {url} with max pages {max_pages+1}\n")
+                
+                self.status_area.insert(tk.END, f"Max pages: {max_pages+1}\n")
             else:
                 self.crawl_thread = threading.Thread(target=self.crawler.run)
-                self.status_area.insert(tk.END, f"Starting crawl at {url} with no max pages")
+            
+            if domain:
+                self.status_area.insert(tk.END, f"Domain: {domain}\n")
+            self.status_area.insert(tk.END, f"\n") 
                 
             self.update_status=threading.Thread(target=self.update_text_area, args=[max_pages+1])
             
+            self.seconds = time.time()
             self.crawl_thread.start() 
             self.update_status.start()  
             
             # self.update_text_area()
 
     def update_text_area(self,max_pages):
-        self.seconds = time.time()
         while self.crawler.running:
             time.sleep(3)
             if self.crawler.running:
-                print("printing crawling status")
                 self.status_area.insert(tk.END, f"Crawled {self.crawler.doc_counter} pages; ")
                 self.status_area.insert(tk.END, f"found {self.crawler.kwd_counter} keywords.\n")
                 if max_pages:
@@ -288,29 +278,23 @@ class CrawlerGUI:
         
     def stop_crawling(self):
         self.stop_crawling_called=True
-        print("SHOULD BE STOPPing")
         # if self.crawler:
         self.status_area.insert(tk.END, f"---------Summary----------\n")
         self.status_area.insert(tk.END, f"Timer for this crawling: {time.time()-self.seconds}\n")
         self.status_area.insert(tk.END, f"Crawled {self.crawler.doc_counter} pages\n")
-        self.status_area.insert(tk.END, f"found {self.crawler.kwd_counter} keywords.\n")   
+        self.status_area.insert(tk.END, f"found {self.crawler.kwd_counter} keywords.\n")  
+        self.status_area.insert(tk.END, f"---------------------------\n") 
+        self.status_area.insert(tk.END, f"\n") 
         if self.crawler.running:
-            print("crawler stopped")
             self.crawler.stop()
-            print(self.crawler.running)
         if self.crawl_thread.is_alive():
-            print('crawler thread joined')
             self.crawl_thread.join()
-            print('joined?')
         if self.update_status.is_alive():
-            print('update status thread joined')
             self.update_status.join()
-        else:
-            print('update status not alivve?')
-        print('crawl stopped')
-        self.status_area.insert(tk.END, "Crawl stopped\n")
+        self.seconds = 0
         self.crawler = None
         self.crawl_thread = None
+        
 
 if __name__ == '__main__':
     # Crawler(urls=['https://cc.gatech.edu'],domain='cc.gatech.edu').run(max_pages=3000)
